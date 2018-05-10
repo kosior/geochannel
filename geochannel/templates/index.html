@@ -1,0 +1,233 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <div class="row mt-3" style="height: 80vh;">
+        <div id="messages" class="col-lg-3 col-12 mb-1">
+            <div class="card h-100" style="min-height: 50vh; max-height: 80vh;">
+                <div class="card-header text-center p-2">Messages</div>
+                <div id="scrollContainer" class="card-body pt-0" style="margin-right: 2px; overflow-y: auto;">
+                    <ul class="list-unstyled" id="msg-ul"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6 col-12 mb-1">
+            <div class="card" style="min-height: 50vh; height: 100%">
+                <div class="card-body">
+                    <div id="chatMap" class="h-100"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-12 h-100">
+            <div class="form-group">
+                <label for="name-input">Name</label>
+                <input class="form-control form-control-lg" id="name-input" placeholder="Enter your name" type="text"
+                       maxlength="30">
+                <div class="invalid-feedback">Please enter your name.</div>
+            </div>
+            <div class="form-group">
+                <label for="latlng-input">Location</label>
+                <input class="form-control form-control-lg" id="latlng-input" placeholder="Pick location on map"
+                       type="text" readonly>
+                <div class="invalid-feedback">Please pick location on map.</div>
+            </div>
+            <div class="form-group">
+                <label for="message-input">Message</label>
+                <textarea class="form-control form-control-lg" id="message-input" rows="5" maxlength="140"
+                          style="resize: none;"></textarea>
+                <div class="invalid-feedback">Please enter message.</div>
+            </div>
+
+            <button id="send-btn" type="button" class="btn btn-block btn-success">Send</button>
+
+            <hr>
+            <div class="custom-control custom-checkbox d-flex">
+                <input class="custom-control-input" id="focus-opt" checked="" type="checkbox">
+                <label class="custom-control-label" for="focus-opt">FOCUS</label>
+            </div>
+        </div>
+    </div>
+{% endblock content %}
+
+{% block js %}
+    <script>
+        var focusOptCheckbox = $('#focus-opt');
+        var disableAutoPan = !focusOptCheckbox.prop('checked');
+
+        focusOptCheckbox.click(function () {
+            if (disableAutoPan) {
+                disableAutoPan = false;
+                $(this).prop('checked', true);
+            } else {
+                disableAutoPan = true;
+                $(this).prop('checked', false);
+            }
+        });
+
+        var chatMap;
+        var pickMarker;
+        var lat, lng, zoom = 6;
+
+        var qs = window.location.search.replace('?c=', '').split(',');
+        qs.push(zoom);
+        if (qs.length > 2) {
+            lat = parseFloat(qs[0]);
+            lng = parseFloat(qs[1]);
+            zoom = parseFloat(qs[2]);
+        } else {
+            lat = 52.069167;
+            lng = 19.480556;
+        }
+
+        function initMap() {
+            chatMap = new google.maps.Map($('#chatMap')[0], {
+                zoom: zoom,
+                center: {lat: lat, lng: lng}
+            });
+
+            chatMap.addListener('click', function (event) {
+                $('#latlng-input').val(event.latLng.lat().toFixed(7) + ',' + event.latLng.lng().toFixed(7));
+
+                if (!pickMarker) {
+                    pickMarker = new google.maps.Marker({
+                        position: event.latLng,
+                        map: chatMap
+                    });
+                } else {
+                    pickMarker.setPosition(event.latLng);
+                }
+            });
+        }
+
+        var msgId = 0;
+        var markers = {};
+
+        function addMsgToMap(map, name, latlng, message) {
+            msgId++;
+            var markerId = 'marker' + msgId.toString();
+            var popupContent = '<span class="badge badge-pill badge-success">' + name + '</span> ' + message;
+
+            latlng = latlng.split(',');
+            var lat = parseFloat(latlng[0]);
+            var lng = parseFloat(latlng[1]);
+
+            var newMarker = new google.maps.Marker({
+                position: {lat: lat, lng: lng},
+                map: map,
+                icon: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png'
+            });
+
+            var infowindow = new google.maps.InfoWindow({
+                content: popupContent,
+                maxWidth: 200,
+                disableAutoPan: disableAutoPan
+            });
+
+            infowindow.open(map, newMarker);
+
+            markers[markerId] = {'marker': newMarker, 'infowindow': infowindow};
+
+            newMarker.addListener('mouseover', function () {
+                infowindow.open(map, this);
+            });
+
+            newMarker.addListener('mouseout', function () {
+                infowindow.close();
+            });
+
+            var newLi = $('<li>', {
+                id: markerId,
+                class: 'msg-left p-2'
+            });
+
+            newLi.html(popupContent);
+
+            $('#msg-ul').append(newLi);
+
+            var scc = $('#scrollContainer');
+            scc.animate({scrollTop: scc.height()}, 0);
+
+
+            setTimeout(function () {
+                infowindow.close();
+            }, 5000);
+
+            setTimeout(function () {
+                newMarker.setMap(null);
+                newMarker = null;
+                infowindow = null;
+                $('#' + markerId).remove();
+            }, 60000);
+        }
+
+
+        var messages = $('#messages');
+
+        messages.on('mouseover', 'li', function () {
+            var mk = markers[this.id];
+            mk.infowindow.setOptions({disableAutoPan: disableAutoPan});
+            mk.infowindow.open(chatMap, mk.marker);
+        });
+
+        messages.on('mouseout', 'li', function () {
+            markers[this.id].infowindow.close();
+        });
+    </script>
+
+    <script async defer
+            src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_API_KEY }}&callback=initMap">
+    </script>
+
+    <script>
+        var chatSocket = new WebSocket('ws://' + window.location.host + '/ws/chat/');
+
+        chatSocket.onmessage = function (e) {
+            var data = JSON.parse(e.data);
+            var name = data['name'];
+            var latlng = data['latlng'];
+            var message = data['message'];
+            addMsgToMap(chatMap, name, latlng, message);
+        };
+
+        chatSocket.onclose = function (e) {
+            console.error('Chat socket closed unexpectedly');
+        };
+
+        $('#message-input').keyup(function (e) {
+            if (e.keyCode === 13) {
+                $('#send-btn').click();
+            }
+        });
+
+        $('#send-btn').click(function (e) {
+            var inputsValid = true;
+            var nameInput = $('#name-input');
+            var latlngInput = $('#latlng-input');
+            var messageInput = $('#message-input');
+
+            [nameInput, latlngInput, messageInput].forEach(function (value) {
+                if (!value.val()) {
+                    value.addClass('is-invalid');
+                    inputsValid = false;
+                } else {
+                    value.removeClass('is-invalid');
+                }
+            });
+
+            if (inputsValid) {
+                chatSocket.send(JSON.stringify({
+                    'name': nameInput.val(),
+                    'latlng': latlngInput.val(),
+                    'message': messageInput.val()
+                }));
+
+                messageInput.val('');
+                if (pickMarker) {
+                    pickMarker.setMap(null);
+                    pickMarker = null;
+                }
+            }
+        });
+    </script>
+{% endblock js %}

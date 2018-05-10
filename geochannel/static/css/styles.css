@@ -1,0 +1,9 @@
+#messages li
+{
+    border-bottom: 1px dotted #B3A9A9;
+}
+
+#messages li:hover
+{
+    background-color: #dcdbd2;
+}
