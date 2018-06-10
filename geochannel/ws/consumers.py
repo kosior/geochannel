@@ -26,7 +26,9 @@ class CustomJsonConsumer(JsonWebsocketConsumer):
 
     def receive_json(self, content, **kwargs):
         if self.ws_object.send_permission:
-            self.send_json(content)
+            async_to_sync(self.channel_layer.group_send)(self.group_name, {'type': 'json.message', 'content': content})
+        else:
+            self.send_json({'error': 'Sending not allowed.'})
 
     def json_message(self, event):
         content = event['content']
