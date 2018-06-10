@@ -33,3 +33,6 @@ class CustomJsonConsumer(JsonWebsocketConsumer):
     def json_message(self, event):
         content = event['content']
         self.send_json(content)
+
+    def force_disconnect(self, event):
+        self.close()
